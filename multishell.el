@@ -1,9 +1,9 @@
-;;; multishell.el --- Easily use multiple shell buffers, local and remote  -*- lexical-binding:t -*-
+;;; multishell.el --- Organize use of multiple shell buffers, local and remote  -*- lexical-binding:t -*-
 
 ;; Copyright (C) 1999-2020 Free Software Foundation, Inc. and Ken Manheimer
 
 ;; Author: Ken Manheimer <ken.manheimer@gmail.com>
-;; Version: 1.1.9
+;; Version: 1.1.10
 ;; Created: 1999 -- first public availability
 ;; Keywords: processes
 ;; Package-Requires: ((cl-lib "0.5"))
@@ -15,37 +15,42 @@
 ;; Fundamentally, multishell is the function `multishell-pop-to-shell' -
 ;; a la `pop-to-buffer' - plus a keybinding. Together, they enable you to:
 ;;
-;; * Get to the input point from wherever you are in a shell buffer,
-;;   ... or to any of your shell buffers, from anywhere inside emacs.
+;; * Easily get to the input point from wherever you are in a shell buffer,
+;;   or to any of your shell buffers, from anywhere inside emacs.
 ;;
-;; * Use universal arguments to launch and choose among alternate shell buffers,
-;;   ... and change which is the current default.
+;; * Use universal arguments and name completion to launch a new or choose
+;;   among existing shell buffers, and change which is the current default.
 ;;
-;; * Easily restart disconnected shells, or shells from prior sessions
-;;   ... the latter from Emacs builtin savehist minibuf history persistence
+;; * Easily restart exited shells, or shells from emacs prior sessions.
 ;;
-;; * Append a path to a new shell name to launch a shell in that directory,
-;;   ... and use a path with Emacs tramp syntax to launch a remote shell -
-;;   for example:
+;; * Specify an initial path for the shell. By using Emacs tramp syntax you
+;;   can launch a sudo and/or remote shell.
 ;;
-;;   * `#root/sudo:root@localhost:/etc` for a buffer named "*#root*" with a
-;;     root shell starting in /etc.
+;;   For example, specifying the following at the multishell buffer name
+;;   prompt will:
 ;;
-;;   * `/ssh:example.net:` for a shell buffer in your homedir on example.net.
-;;     The buffer will be named "*example.net*".
+;;   * `#root/sudo:root@localhost:/etc` launch a shell in a buffer named
+;;     "*#root*" with a root shell starting in /etc.
 ;;
-;;   * `#ex/ssh:example.net|sudo:root@example.net:/var/log` for a root shell
-;;     starting in /var/log on example.net named "*#ex*".
+;;   * `/ssh:example.net:` launch a shell buffer in your homedir on
+;;     example.net.  The buffer will be named "*example.net*".
 ;;
-;;   * 'interior/ssh:gateway.corp.com|ssh:interior.corp.com:' to go via
-;;     gateway.corp.com to your homedir on interior.corp.com.  The buffer
-;;     will be named "*interior*". You could append a sudo hop, and so on.
+;;   * `#ex/ssh:example.net|sudo:root@example.net:/etc` launch a root
+;;     shell starting in /etc on example.net named "*#ex*".
 ;;
-;; * Thanks to tramp, file visits from the shell will seamlessly be in
-;;   the auspices of the target account, and relative to the current
-;;   directory, on the host where the shell is running.
+;;   * `interior/ssh:gateway.corp.com|ssh:interior.corp.com:` via
+;;     gateway.corp.com launch a shell in your homedir on interior.corp.com.
+;;     The buffer will be named "*interior*". You could append a sudo hop,
+;;     and so on.
+;;
+;; * Thanks to tramp, file visits initiated in remote shell buffers will
+;;   seamlessly be on the hosts where the shells are running, in the auspices
+;;   of the account being used.
 ;;
 ;; * Manage your list of shells, current and past, as a collection.
+;;
+;; * Of course, emacs completion makes it easy to switch to an already
+;;   existing shell buffer, or one in your history roster, by name.
 ;;
 ;; See the `multishell-pop-to-shell' docstring for details.
 ;;
@@ -60,6 +65,10 @@
 ;;
 ;; Change Log:
 ;;
+;; * 2022-06-04 1.1.10 Ken Manheimer:
+;;   - Autoload customizations so customized multishell keybinding triggers
+;;     load of the package.
+;;   - Refine multishell features description.
 ;; * 2021-08-02 1.1.10 Ken Manheimer:
 ;;   - Get basic multishell command-key customization working.
 ;; * 2020-10-30 1.1.9 Ken Manheimer:
@@ -186,40 +195,54 @@
           (message "%s" msg)
         msg))))
 
-(defgroup multishell nil
-  "Allout extension that highlights outline structure graphically.
+
+;;;###autoload
+(unless (fboundp 'multishell-pop-to-shell)
+  (defgroup multishell nil
+    "Allout extension that highlights outline structure graphically.
 
 Customize `allout-widgets-auto-activation' to activate allout-widgets
 with allout-mode."
-  :group 'shell)
+    :group 'shell))
 
-(defun multishell-command-key-setter (symbol value)
-  "Establish key binding, or do nothing if none selected."
-  symbol
-  (cond (value
-         (setq multishell-command-key value)
-         (global-set-key multishell-command-key 'multishell-pop-to-shell))
-        ((and multishell-command-key
-              (equal (lookup-key (current-global-map)
-                                 multishell-command-key)
-                     'multishell-pop-to-shell))
-         (global-unset-key multishell-command-key)
-         (setq multishell-command-key nil)))
+;;;###autoload
+(unless (fboundp 'multishell-pop-to-shell)
+  (defun multishell-command-key-setter (symbol value)
+    "Establish key binding, or do nothing if none selected."
+    symbol
+    (cond (value
+           (setq multishell-command-key value)
+           (global-set-key multishell-command-key 'multishell-pop-to-shell))
+          ((and multishell-command-key
+                (equal (lookup-key (current-global-map)
+                                   multishell-command-key)
+                       'multishell-pop-to-shell))
+           (global-unset-key multishell-command-key)
+           (setq multishell-command-key nil))))
  )
-(defcustom multishell-command-key [M-space]
-  "Key to bind to `multishell-pop-to-shell`.
+
+;; For the package load to be triggered by a user's customized
+;; multishell-command-key we have to autoload the customizations. That
+;; requires a workaround like that described here, which I use:
+;; https://stackoverflow.com/questions/32693757/emacs-package-customization-and-autoloads
+;;;###autoload
+(unless (fboundp 'multishell-pop-to-shell)
+  (defcustom multishell-command-key [M-space]
+    "Key to bind to `multishell-pop-to-shell`.
 
 If you select None then the prior binding is removed.
 
 \(In some windowing environments `M- ` (Meta-space) doesn't
 work. A possibly appealing alternative is `M-<return>`.)"
-  :set #'multishell-command-key-setter
-  :type '(choice
-          (const :tag "None" nil)
-          (key-sequence :tag "Key sequence")))
+    :set #'multishell-command-key-setter
+    :type '(choice
+            (const :tag "None" nil)
+            (key-sequence :tag "Key sequence"))))
 
-(defcustom multishell-pop-to-frame nil
-  "*If non-nil, jump to a frame already showing the shell, if another one is.
+;;;###autoload
+(unless (fboundp 'multishell-pop-to-shell)
+  (defcustom multishell-pop-to-frame nil
+    "*If non-nil, jump to a frame already showing the shell, if another one is.
 
 Otherwise, disregard already-open windows on the shell if they're
 in another frame, and open a new window on the shell in the
@@ -227,17 +250,19 @@ current frame.
 
 \(Use `pop-up-windows' to change multishell other-window vs
 current-window behavior.)"
-  :type 'boolean)
+    :type 'boolean))
 
-(defcustom multishell-history-entry-tracks-current-directory t
-  "Maintain shell's current directory in its multishell history entry.
+;;;###autoload
+(unless (fboundp 'multishell-pop-to-shell)
+  (defcustom multishell-history-entry-tracks-current-directory t
+    "Maintain shell's current directory in its multishell history entry.
 
 When set, the history entry for shells started with explicit
 paths will track the shell's current working directory.
 
 If `savehist-save-minibuffer-history' is enabled, the current
 working directory of shells will be conveyed between Emacs sessions."
- :type 'boolean)
+    :type 'boolean))
 
 (defvar multishell-history nil
   "Name/path entries, most recent first.")
